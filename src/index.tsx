@@ -1,7 +1,5 @@
 import React, { Component } from 'react';
 import { render } from 'react-dom';
-import Backend from 'react-dnd-html5-backend'
-import { DndProvider } from 'react-dnd'
 
 import Tree from './tree/index'
 

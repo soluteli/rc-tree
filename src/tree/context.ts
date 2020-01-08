@@ -1,9 +1,10 @@
-import React, { createContext } from 'react'
+import { createContext } from 'react'
 
 import { TreeNodeType } from '../types'
 
 export interface contextType {
-  data?: TreeNodeType[]
+  data?: TreeNodeType[],
+  setTreeData?: (v: TreeNodeType[]) => void
 }
 
 const Context = createContext<contextType>({})

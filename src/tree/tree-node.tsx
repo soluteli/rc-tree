@@ -3,7 +3,7 @@ import { useDrag, useDrop, XYCoord } from 'react-dnd'
 
 import { ITreeNodeProps, TreeNodeType } from '../types'
 
-import Context, { contextType } from './context'
+import Context from './context'
 
 type HoverStatus = 'up' | 'middle' | ''
 
@@ -18,6 +18,14 @@ interface IHoverItem {
   id: string
 }
 
+type nodePathType = (string | number)[]
+type nodeType = null | TreeNodeType
+
+interface IDropNode {
+  node: nodeType,
+  nodePath: nodePathType
+}
+
 function loopGetId(data: TreeNodeType[], ret: string[] = []): string[] {
   data.forEach(item => {
     ret.push(item.id)
@@ -29,7 +37,7 @@ function loopGetId(data: TreeNodeType[], ret: string[] = []): string[] {
   return ret
 }
 
-function loopFindChildren (data: TreeNodeType[], curId: string, ret: string[] = []): string[] {
+function loopFindChildIDS (data: TreeNodeType[], curId: string, ret: string[] = []): string[] {
   data.forEach(item => {
     if (item.id === curId) {
       if (item.children) {
@@ -40,7 +48,7 @@ function loopFindChildren (data: TreeNodeType[], curId: string, ret: string[] = 
     } else {
       if (item.children) {
         // 获取子节点 ID
-        const ids = loopFindChildren(item.children, curId, ret)
+        const ids = loopFindChildIDS(item.children, curId, ret)
         ret = [...ret, ...ids]
       }
     }
@@ -49,19 +57,114 @@ function loopFindChildren (data: TreeNodeType[], curId: string, ret: string[] = 
   return ret
 }
 
+function loopFindNode(data: TreeNodeType[], id: string, dropPath: nodePathType = [], doDelete: boolean = false): IDropNode {
+  let node = null
+  let nodePath = [...dropPath]
+  for (let index = 0; index < data.length; index++) {
+    const item = data[index];
+    if (item.id === id) {
+      node = item
+      nodePath = [...dropPath, index]
+      doDelete && data.splice(index, 1)
+      data = [...data]
+      break
+    } else {
+      if (item.children) {
+        const d = loopFindNode(item.children, id, [...dropPath, index, 'children'], true)
+        if (d.node) {
+          node = d.node
+          nodePath = d.nodePath
+          break
+        }
+      }
+    }
+  }
+  return {
+    node,
+    nodePath
+  }
+}
+
+function loopFindDropNode(data: TreeNodeType[], id: string, position: HoverStatus, dropPath: nodePathType = [], newNode: nodeType = null) {
+  // let node = null
+  // let nodePath = [...dropPath]
+  if (position === 'up') {
+    for (let index = 0; index < data.length; index++) {
+      const item = data[index];
+      if (item.id === id) {
+        // node = data
+        // nodePath = [...dropPath]
+        if (newNode) {
+          data.splice(index, 0, newNode)
+          data = [...data]
+        }
+        break
+      } else if (item.children) {
+        loopFindDropNode(item.children, id, position, [...dropPath, index, 'children'], newNode)
+        // if (d.node) {
+        //   node = d.node
+        //   nodePath = d.nodePath
+        //   break
+        // }
+      }
+    }
+  } else if (position === 'middle') {
+    for (let index = 0; index < data.length; index++) {
+      const item = data[index];
+      if (item.id === id) {
+        // node = item
+        // nodePath = [...dropPath, index]
+        if (newNode) {
+          if (item.children && item.children.length) {
+            item.children.push(newNode)
+          } else {
+            item.children = [newNode]
+          }
+
+          item.children = [...item.children]
+        }
+        break
+      } else {
+        if (item.children) {
+          loopFindDropNode(item.children, id, position, [...dropPath, index, 'children'], newNode)
+          // if (d.node) {
+          //   node = d.node
+          //   nodePath = d.nodePath
+          //   break
+          // }
+        }
+      }
+    }
+  }
+  // return {
+  //   node,
+  //   nodePath
+  // }
+}
+
+function moveChild(data: TreeNodeType[], dragId: string, dropId: string, position: HoverStatus) {
+  const { node: dragNode } = loopFindNode(data, dragId, [], true)
+  loopFindDropNode(data, dropId, position, [], dragNode)
+  return [...data]
+}
+
 
 function useDragDrop (props: DragDropType) : [HoverStatus, React.Ref<HTMLDivElement>, boolean, boolean] {
   const ref = useRef<HTMLDivElement>(null)
   const [PreviewStatus, setPreviewStatus] = useState<HoverStatus>('')
   const [isTreeClose, setTreeClose] = useState(true)
-  const { data: store } = useContext(Context)
+  const { data: store, setTreeData } = useContext(Context)
 
   const [droppedProps, drop] = useDrop({
 		accept: ['node', 'nodes'],
     drop: (item, monitor) => {
       const dragId = (item as DragDropType).id
       const dropId = props.id
-      console.log('cc', monitor.canDrop())
+      if (store) {
+        const newData = moveChild(store, dragId, dropId, PreviewStatus)
+        console.log('mew',newData)
+        setTreeData && setTreeData(newData)
+      }
     },
     hover: (item, monitor) => {
       if (!ref.current) {
@@ -119,7 +222,7 @@ function useDragDrop (props: DragDropType) : [HoverStatus, React.Ref<HTMLDivElem
         return false
       }
 
-      const childIds = store ? loopFindChildren(store, dragId) : []
+      const childIds = store ? loopFindChildIDS(store, dragId) : []
       return !childIds.includes(props.id)
     },
     collect: (monitor) => {
@@ -184,9 +287,13 @@ const TreeNode: React.FC<ITreeNodeProps> = (props) => {
           display: 'flex',
         }}>
           {
-            props.data.children && <div
+            props.data.children && props.data.children.length > 0 && 
+            <div
               style={{border: '1px solid pink'}}
-            onClick={handleToggle}>{isTreeClose ? '+' : '-'}  </div>
+              onClick={handleToggle}
+            >
+              {isTreeClose ? '+' : '-'}
+            </div>
           }
           <TreeNodeContent
            id={props.data.id} title={props.data.title} />
@@ -196,7 +303,7 @@ const TreeNode: React.FC<ITreeNodeProps> = (props) => {
           display: isTreeClose ? 'none' : 'block',
         }}>
           {
-            props.data.children ?
+            props.data.children && props.data.children.length > 0 ?
             props.data.children.map(item => <TreeNode key={item.id} data={item} />)
             :
             null
